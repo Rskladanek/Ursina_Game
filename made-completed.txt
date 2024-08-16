@@ -1,0 +1,12 @@
+- Main Menu
+- In-Game Menu
+- Shooting Mechanics
+- Shooting Sound Effects
+- Gun Aiming System
+- Sprinting Functionality
+- Enemy Elimination
+- Jumping Mechanics
+- Player Movement
+- Health Points (HP)
+- Ammunition (Ammo)
+- Enemy AI/Behavior

@@ -1,0 +1,10 @@
+########################
+#   Fix and Inprove    #
+########################
+!!!Dodać moduł który wyświtla you died and restart misision,exit mission
+1. Muzyka,efekty dziękowe odpowiednio przypisac je do obiektów(gracz,karabin,przeciwnik)
+2. Trzeba bedzie potworzyc poziomy i enemies ogarnąć
+3. Fizyka przeciwników,zachowanie ich,rodzaje,umiejętnosci
+4. Eewentualnie podkręcenie fizyki (Mozna bunnyhopowac ^^)?
+5. Enemies
+6.Animacje-wiece-zależeć bedzie od predkości i plyności rozgrywki
