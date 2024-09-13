@@ -7,9 +7,13 @@ from ui.hud import HUD
 from enemy.enemy import Enemy
 
 class Player(FirstPersonController):
-    def __init__(self, **kwargs):
+    def __init__(self, shootables_parent, initial_enemy_positions, **kwargs):
         super().__init__(**kwargs)
         self.collider = BoxCollider(self, Vec3(0, 1, 0), Vec3(1, 2, 1))
+
+        # Assign shootables_parent and initial_enemy_positions
+        self.shootables_parent = shootables_parent
+        self.initial_enemy_positions = initial_enemy_positions
 
         # Initialize the weapon
         self.weapon = Weapon(player=self)
@@ -58,6 +62,9 @@ class Player(FirstPersonController):
         # Player sounds
         self.step_sound = Audio('../asserts/step.wav', autoplay=False)
 
+        # Initialize death_screen and death_text
+        self.death_screen = None
+        self.death_text = None
 
     def update(self):
         if self.is_dead:
@@ -92,9 +99,7 @@ class Player(FirstPersonController):
         ).normalized()
 
         if self.grounded and move_direction.length() > 0:
-            # Inercja jest ustawiana tylko, gdy postać jest na ziemi i się porusza
             self.inertia = move_direction * self.speed
-            #self.play_step_sound()
 
         if held_keys['left mouse'] and not self.weapon.reloading:
             self.weapon.shoot()
@@ -123,19 +128,13 @@ class Player(FirstPersonController):
             self.sprint_active = False
             camera.fov = lerp(camera.fov, 90, 0.1)
 
-
-    def play_step_sound(self):
-        if self.step_sound:
-            self.step_sound.play()
-
-
     def apply_inertia(self):
-        # Stosowanie inercji do ruchu
+        # Apply inertia to movement
         if not self.grounded:
-            # Gdy w powietrzu, kontynuuj ruch z użyciem inercji
+            # Continue moving with inertia in the air
             self.position += self.inertia * time.dt
         else:
-            # Na ziemi inercja jest stopniowo redukowana
+            # Reduce inertia gradually on the ground
             self.inertia *= (1 - self.friction)
             self.position += self.inertia * time.dt
 
@@ -144,7 +143,6 @@ class Player(FirstPersonController):
         self.grounded = False
 
     def bunny_hop(self):
-        # Zachowanie pędu w powietrzu
         if not self.grounded:
             if self.sprint_active:
                 self.inertia *= self.jump_boost
@@ -158,7 +156,6 @@ class Player(FirstPersonController):
             self.velocity.y = 0
             self.position.y = ray.world_point.y + 1
 
-            # Resetowanie inercji tylko po wylądowaniu, gdy prędkość jest bardzo niska
             if self.inertia.length() < 0.1 and not any((held_keys['w'], held_keys['s'], held_keys['a'], held_keys['d'])):
                 self.inertia = Vec3(0, 0, 0)
         else:
@@ -178,8 +175,9 @@ class Player(FirstPersonController):
         self.aiming = False
 
     def die(self):
-        if not self.death_screen:
+        if self.death_screen is None:
             self.is_dead = True
+            self.alive = False
             self.hud.enabled = False
             self.death_screen = Entity(parent=camera.ui, model='quad', color=color.rgba(255, 0, 0, 128), scale=(2, 2, 1))
             self.death_text = Text(text="You are dead\nPress R to restart", parent=self.death_screen, origin=(0, 0), scale=2, color=color.white)
@@ -194,22 +192,24 @@ class Player(FirstPersonController):
         self.is_dead = False
         self.alive = True
 
-        for enemy in self.shootables_parent.children:
+        # Destroy existing enemies
+        for enemy in self.shootables_parent.children[:]:
             if isinstance(enemy, Enemy):
                 destroy(enemy)
 
+        # Respawn enemies at initial positions
         for initial_pos in self.initial_enemy_positions:
             Enemy(shootables_parent=self.shootables_parent, player=self, initial_position=initial_pos)
 
-        if self.death_screen:
+        if self.death_screen is not None:
             destroy(self.death_screen)
             self.death_screen = None
         self.hud.enabled = True
+        self.hud.update()  # Update the HUD to reflect new health and ammo
         print(f"Respawned at position: {self.position}")
 
     def update_ui(self):
-        self.health_text.text = f'HP: {self.hp}'
-        self.ammo_text.text = f'Ammo: {self.weapon.ammo}/{self.weapon.max_ammo}'
+        self.hud.update()  # Update HUD elements
 
     def input(self, key):
         if key == 'r' and self.is_dead:

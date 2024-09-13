@@ -34,18 +34,14 @@ def start_game():
     # Create the game environment
     setup_environment()
 
-    # Create the player
-    player = Player()
-
     # Create a parent for shootable objects
     shootables_parent = Entity()
 
-    # Pass shootables_parent to player
-    player.shootables_parent = shootables_parent
-
     # Create initial enemy positions
     initial_enemy_positions = [Vec3(x * 10, 0, uniform(-8, 8)) for x in range(10)]
-    player.initial_enemy_positions = initial_enemy_positions  # Store initial enemy positions in player
+
+    # Create the player
+    player = Player(shootables_parent=shootables_parent, initial_enemy_positions=initial_enemy_positions)
 
     # Create enemies and pass shootables_parent and player
     for pos in initial_enemy_positions:

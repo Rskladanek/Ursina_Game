@@ -75,10 +75,10 @@ class MenuMenu(Entity):
         Text("CREDITS MENU", parent=self.credits_menu, y=0.4, origin=(0, 0), scale=2, color=color.azure)
 
         credits_text = """
-        Game Design: Remigiusz Squadanek
-        Programming: Remigiusz Squadanek
-        Art: John Smith
-        Music: Jane Smith
+        Game Design: Remigiusz Squadanek & Dawid Hajkowski
+        Programming: Remigiusz Squadanek & Dawid Hajkowski
+        Art: Patryk Subieta
+        Music: Fryderyk Hopin
         """
 
         Text(credits_text, parent=self.credits_menu, y=0, origin=(0, 0), color=color.white)
