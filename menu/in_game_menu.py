@@ -4,69 +4,337 @@ from ursina import *
 from data.ui_text import TEXT
 
 
-class InGameMenu(Entity):
-    """Menu pauzy. Esc obsługuje GameManager, żeby nie było podwójnych eventów."""
+def txt(key: str, fallback: str) -> str:
+    return TEXT.get(key, fallback)
 
-    def __init__(self, resume_callback=None, restart_callback=None, main_menu_callback=None, **kwargs):
-        super().__init__(parent=camera.ui, ignore_paused=True, enabled=False)
+
+class InGameMenu(Entity):
+    """
+    Stabilne menu pauzy:
+    - bez Buttonów,
+    - bez Unicode,
+    - bez białych paneli,
+    - działa ESC/P/R/Enter/W/S/klik myszą,
+    - samo obsługuje input nawet gdy application.paused=True.
+    """
+
+    def __init__(
+        self,
+        resume_callback=None,
+        restart_callback=None,
+        main_menu_callback=None,
+        quit_callback=None,
+        **kwargs
+    ):
+        super().__init__(
+            parent=camera.ui,
+            enabled=False,
+            ignore_paused=True,
+        )
+
         self.resume_callback = resume_callback
         self.restart_callback = restart_callback
         self.main_menu_callback = main_menu_callback
+        self.quit_callback = quit_callback or application.quit
 
-        self.menu_background = Entity(parent=self, model='quad', color=color.rgba(0, 0, 0, 185), scale=(window.aspect_ratio * 2.1, 2.1), z=0.12)
-        self.card = Entity(parent=self, model='quad', color=color.rgba(22, 25, 32, 230), scale=(.72, .82), z=.11)
-        Text(TEXT['pause'], parent=self, y=.31, origin=(0, 0), scale=2.0, color=color.gold)
-        Text('Esc wraca do gry. R robi restart poziomu.', parent=self, y=.22, origin=(0, 0), scale=.62, color=color.light_gray)
+        self.selected_index = 0
+        self.controls_visible = False
 
-        self._button(TEXT['resume'], .09, self._resume, color.lime)
-        self._button(TEXT['restart_level'], -.03, self._restart, color.azure)
-        self._button('Sterowanie', -.15, self._controls, color.cyan)
-        self._button(TEXT['main_menu'], -.27, self._main_menu, color.orange)
-        self._button(TEXT['quit'], -.39, application.quit, color.red)
+        self.entries = []
+        self.entry_labels = []
 
-        self.controls_text = Text('', parent=self, y=-.51, origin=(0, 0), scale=.55, color=color.rgba(255, 255, 255, 180))
+        self._build()
 
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def _button(self, text, y, on_click, color_value):
-        return Button(text=text, parent=self, y=y, scale=(.45, .075), color=color_value, highlight_color=color.cyan, pressed_color=color.lime, on_click=on_click)
+    def _build(self):
+        # Overlay z tyłu.
+        self.overlay = Entity(
+            parent=self,
+            model='quad',
+            scale=(3.5, 2.2),
+            position=(0, 0, 0.5),
+            color=color.rgba(0, 0, 0, 235),
+            collider=None,
+            ignore_paused=True,
+        )
+
+        # Teksty z przodu.
+        self.title = Text(
+            text='PAUZA',
+            parent=self,
+            origin=(0, 0),
+            position=(0, 0.34, -1),
+            scale=2.3,
+            color=color.yellow,
+            ignore_paused=True,
+        )
+
+        self.subtitle = Text(
+            text='Gra zatrzymana',
+            parent=self,
+            origin=(0, 0),
+            position=(0, 0.245, -1),
+            scale=0.9,
+            color=color.light_gray,
+            ignore_paused=True,
+        )
+
+        self.hint = Text(
+            text='W/S - wybor     Enter - zatwierdz     Esc/P - powrot',
+            parent=self,
+            origin=(0, 0),
+            position=(0, 0.175, -1),
+            scale=0.58,
+            color=color.gray,
+            ignore_paused=True,
+        )
+
+        self.line_top = Text(
+            text='------------------------------',
+            parent=self,
+            origin=(0, 0),
+            position=(0, 0.115, -1),
+            scale=0.65,
+            color=color.dark_gray,
+            ignore_paused=True,
+        )
+
+        self.entries = [
+            {
+                'label': txt('resume', 'Wroc do gry'),
+                'callback': self._resume,
+                'base_color': color.lime,
+            },
+            {
+                'label': txt('restart_level', 'Restart poziomu'),
+                'callback': self._restart,
+                'base_color': color.azure,
+            },
+            {
+                'label': 'Sterowanie',
+                'callback': self._toggle_controls,
+                'base_color': color.cyan,
+            },
+            {
+                'label': txt('main_menu', 'Menu glowne'),
+                'callback': self._main_menu,
+                'base_color': color.orange,
+            },
+            {
+                'label': txt('quit', 'Wyjdz'),
+                'callback': self._quit,
+                'base_color': color.red,
+            },
+        ]
+
+        start_y = 0.035
+        step = 0.085
+
+        for i, entry in enumerate(self.entries):
+            label = Text(
+                text='',
+                parent=self,
+                origin=(0, 0),
+                position=(0, start_y - i * step, -1),
+                scale=0.9,
+                color=entry['base_color'],
+                ignore_paused=True,
+            )
+
+            self.entry_labels.append(label)
+
+        self.line_bottom = Text(
+            text='------------------------------',
+            parent=self,
+            origin=(0, 0),
+            position=(0, -0.405, -1),
+            scale=0.65,
+            color=color.dark_gray,
+            ignore_paused=True,
+        )
+
+        self.controls_text = Text(
+            text='',
+            parent=self,
+            origin=(0, 0),
+            position=(0, -0.47, -1),
+            scale=0.55,
+            color=color.white,
+            enabled=False,
+            ignore_paused=True,
+        )
+
+        self._refresh()
+
+    def _refresh(self):
+        for i, entry in enumerate(self.entries):
+            selected = i == self.selected_index
+            number = i + 1
+
+            if selected:
+                self.entry_labels[i].text = f'>  {number}. {entry["label"]}  <'
+                self.entry_labels[i].color = color.yellow
+                self.entry_labels[i].scale = 1.05
+            else:
+                self.entry_labels[i].text = f'   {number}. {entry["label"]}'
+                self.entry_labels[i].color = entry['base_color']
+                self.entry_labels[i].scale = 0.9
+
+    def update(self):
+        if not self.enabled:
+            return
+
+        hovered = self._get_hovered_index()
+
+        if hovered is not None and hovered != self.selected_index:
+            self.selected_index = hovered
+            self._refresh()
+
+    def input(self, key):
+        """
+        Najważniejsza poprawka.
+        To działa nawet podczas application.paused=True, bo menu ma ignore_paused=True.
+        """
+        if not self.enabled:
+            return
+
+        self.handle_key(key)
+
+    def _get_hovered_index(self):
+        mx = mouse.x
+        my = mouse.y
+
+        if not (-0.45 <= mx <= 0.45):
+            return None
+
+        for i, label in enumerate(self.entry_labels):
+            y = label.y
+
+            if y - 0.04 <= my <= y + 0.04:
+                return i
+
+        return None
+
+    def _activate_selected(self):
+        if not self.entries:
+            return
+
+        callback = self.entries[self.selected_index]['callback']
+
+        if callback:
+            callback()
+
+    def handle_key(self, key: str) -> bool:
+        if not self.enabled:
+            return False
+
+        if key in ('escape', 'p'):
+            self._resume()
+            return True
+
+        if key == 'r':
+            self._restart()
+            return True
+
+        if key in ('w', 'up arrow'):
+            self.selected_index = (self.selected_index - 1) % len(self.entries)
+            self._refresh()
+            return True
+
+        if key in ('s', 'down arrow'):
+            self.selected_index = (self.selected_index + 1) % len(self.entries)
+            self._refresh()
+            return True
+
+        if key in ('enter', 'space'):
+            self._activate_selected()
+            return True
+
+        if key == 'left mouse down':
+            hovered = self._get_hovered_index()
+
+            if hovered is not None:
+                self.selected_index = hovered
+                self._refresh()
+                self._activate_selected()
+
+            return True
+
+        if key in ('1', '2', '3', '4', '5'):
+            index = int(key) - 1
+
+            if 0 <= index < len(self.entries):
+                self.selected_index = index
+                self._refresh()
+                self._activate_selected()
+
+            return True
+
+        return False
 
     def show(self):
         self.enabled = True
-        self.scale = .92
-        self.animate_scale(1, duration=.08, curve=curve.out_quad)
+
+        self.selected_index = 0
+        self.controls_visible = False
+        self.controls_text.enabled = False
+        self.controls_text.text = ''
+
+        self._refresh()
+
         mouse.visible = True
         mouse.locked = False
         application.paused = True
 
-    def force_hide(self):
+    def hide(self):
         self.enabled = False
+
+        self.controls_visible = False
+        self.controls_text.enabled = False
         self.controls_text.text = ''
 
+    def force_hide(self):
+        self.hide()
+
     def _resume(self):
-        self.force_hide()
+        self.hide()
+
         if self.resume_callback:
             self.resume_callback()
         else:
             application.paused = False
-            mouse.locked = True
             mouse.visible = False
+            mouse.locked = True
 
     def _restart(self):
-        self.force_hide()
+        self.hide()
+
         if self.restart_callback:
             self.restart_callback()
 
     def _main_menu(self):
-        self.force_hide()
+        self.hide()
+
         if self.main_menu_callback:
             self.main_menu_callback()
 
-    def _controls(self):
-        self.controls_text.text = TEXT['controls_line']
+    def _quit(self):
+        self.quit_callback()
 
-    # kompatybilność ze starym main.py
+    def _toggle_controls(self):
+        self.controls_visible = not self.controls_visible
+        self.controls_text.enabled = self.controls_visible
+
+        if self.controls_visible:
+            self.controls_text.text = (
+                'WASD ruch | Mysz celowanie | LPM strzal\n'
+                'Shift sprint | R przeladuj | Esc/P pauza'
+            )
+        else:
+            self.controls_text.text = ''
+
     def resume_game(self):
         self._resume()
 
@@ -74,4 +342,9 @@ class InGameMenu(Entity):
         self.show()
 
     def disable(self):
-        self.force_hide()
+        self.hide()
+
+
+PauseMenu = InGameMenu
+IngameMenu = InGameMenu
+PauseOverlay = InGameMenu

@@ -57,10 +57,13 @@ class Player(FirstPersonController):
         self.alive = True
         self.damage_flash = Entity(parent=camera.ui, model='quad', enabled=False, color=color.rgba(255, 0, 0, 55), scale=(2.2, 2.2), z=.15)
 
-        try:
-            self.step_sound = Audio(audio_path('step.wav'), autoplay=False)
-        except Exception:
-            self.step_sound = None
+        self.step_sound = None
+        step_clip = audio_path('step')
+        if step_clip:
+            try:
+                self.step_sound = Audio(step_clip, autoplay=False)
+            except Exception as exc:
+                print(f'[audio] Nie udało się załadować kroku: {exc}')
 
     def update(self):
         if application.paused or self.is_dead:
@@ -207,6 +210,11 @@ class Player(FirstPersonController):
         self.hud.update()
 
     def input(self, key):
+        # Esc/P obsługuje centralnie GameManager. Dzięki temu pauza działa nawet gdy FPC trzyma mysz.
+        if key in ('escape', 'p') and self.game_manager:
+            self.game_manager.handle_key(key)
+            return
+
         # R jako restart obsługuje centralnie GameManager; tutaj zostawiamy tylko input FPC.
         super().input(key)
 
